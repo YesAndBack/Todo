@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Center, Loader } from '@mantine/core';
 import { useAuth } from '../lib/auth-context';
@@ -12,12 +12,16 @@ interface ProtectedRouteProps {
 export function ProtectedRoute({ children }: ProtectedRouteProps) {
   const { user, loading } = useAuth();
   const router = useRouter();
+  const [isRedirecting, setIsRedirecting] = useState(false);
 
   useEffect(() => {
-    if (!loading && !user) {
+
+    if (!loading && !user && !isRedirecting) {
+      setIsRedirecting(true); 
       router.push('/sign-in');
     }
-  }, [user, loading, router]);
+  }, [user, loading, router, isRedirecting]);
+
 
   if (loading) {
     return (
@@ -27,8 +31,12 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
     );
   }
 
-  if (!user) {
-    return null;
+  if (!user || isRedirecting) {
+    return (
+      <Center style={{ height: '100vh' }}>
+        <Loader />
+      </Center>
+    );
   }
 
   return <>{children}</>;

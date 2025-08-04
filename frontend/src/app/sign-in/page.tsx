@@ -14,12 +14,11 @@ import {
   Stack,
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
-import { useAuth } from '../lib/auth-context';
-
+import { api } from '../lib/api';
+import { notifications } from '@mantine/notifications';
 
 export default function SignInPage() {
   const [loading, setLoading] = useState(false);
-  const { login } = useAuth();
   const router = useRouter();
 
   const form = useForm({
@@ -36,10 +35,26 @@ export default function SignInPage() {
   const handleSubmit = async (values: typeof form.values) => {
     setLoading(true);
     try {
-      await login(values.username, values.password);
+      await api.auth.login({
+        username: values.username,
+        password: values.password
+      });
+      
+      notifications.show({
+        title: 'Успех',
+        message: 'Вы успешно вошли в систему',
+        color: 'green',
+      });
+      
       router.push('/tasks');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Login error:', error);
+      
+      notifications.show({
+        title: 'Ошибка',
+        message: error.response?.data?.detail || 'Ошибка входа',
+        color: 'red',
+      });
     } finally {
       setLoading(false);
     }

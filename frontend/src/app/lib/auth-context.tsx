@@ -1,9 +1,9 @@
 'use client';
 
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
 import { api, User } from './api';
 import { notifications } from '@mantine/notifications';
-import { Center, Loader } from '@mantine/core';
 
 interface AuthContextType {
   user: User | null;
@@ -15,36 +15,75 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// Список защищенных маршрутов, требующих авторизации
+const PROTECTED_ROUTES = ['/tasks'];
+
+// Список публичных маршрутов, где не нужно проверять авторизацию
+const PUBLIC_ROUTES = ['/sign-in', '/sign-up'];
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false); // Изначально false
+  const pathname = usePathname();
+  const router = useRouter();
+
+  // Проверка, является ли текущий маршрут защищенным
+  const isProtectedRoute = PROTECTED_ROUTES.some(route => 
+    pathname?.startsWith(route)
+  );
+
+  // Проверка, является ли текущий маршрут публичным
+  const isPublicRoute = PUBLIC_ROUTES.some(route => 
+    pathname?.startsWith(route)
+  );
 
   const checkAuth = async () => {
+    // Не проверяем авторизацию на публичных маршрутах
+    if (isPublicRoute) {
+      return;
+    }
+
+    setLoading(true);
+    
     try {
       const response = await api.auth.me();
       setUser(response.data);
     } catch (error: any) {
-      if (error.response?.status === 401) {
-        setUser(null);
+      console.log('Auth check failed:', error.response?.status);
+      
+      // Если на защищенном маршруте и нет авторизации, перенаправляем
+      if (isProtectedRoute) {
+        router.push('/sign-in');
       }
+      
+      setUser(null);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    checkAuth();
-  }, []);
+    // Проверяем авторизацию только при переходе на защищенный маршрут
+    // или при первой загрузке (если не на публичном маршруте)
+    if (isProtectedRoute) {
+      checkAuth();
+    }
+  }, [pathname]);
 
   const login = async (username: string, password: string) => {
     try {
       await api.auth.login({ username, password });
-      await checkAuth();
+      const response = await api.auth.me();
+      setUser(response.data);
+      
       notifications.show({
         title: 'Успех',
         message: 'Вы успешно вошли в систему',
         color: 'green',
       });
+      
+      // После успешного входа перенаправляем на страницу задач
+      router.push('/tasks');
     } catch (error: any) {
       notifications.show({
         title: 'Ошибка',
@@ -63,6 +102,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         message: 'Регистрация прошла успешно',
         color: 'green',
       });
+      
+      // После успешной регистрации перенаправляем на страницу входа
+      router.push('/sign-in');
     } catch (error: any) {
       notifications.show({
         title: 'Ошибка',
@@ -80,16 +122,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.error('Ошибка при логауте:', error);
     } finally {
       setUser(null);
+      router.push('/sign-in');
     }
   };
-
-  if (loading) {
-    return (
-      <Center style={{ height: '100vh' }}>
-        <Loader />
-      </Center>
-    );
-  }
 
   return (
     <AuthContext.Provider value={{ user, loading, login, register, logout }}>

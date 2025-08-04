@@ -14,12 +14,11 @@ import {
   Stack,
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
-import { useAuth } from '../lib/auth-context';
-
+import { api } from '../lib/api';
+import { notifications } from '@mantine/notifications';
 
 export default function SignUpPage() {
   const [loading, setLoading] = useState(false);
-  const { register } = useAuth();
   const router = useRouter();
 
   const form = useForm({
@@ -42,10 +41,27 @@ export default function SignUpPage() {
   const handleSubmit = async (values: typeof form.values) => {
     setLoading(true);
     try {
-      await register(values.username, values.email, values.password);
+      await api.auth.register({
+        username: values.username,
+        email: values.email,
+        password: values.password
+      });
+      
+      notifications.show({
+        title: 'Успех',
+        message: 'Регистрация прошла успешно',
+        color: 'green',
+      });
+      
       router.push('/sign-in');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Register error:', error);
+      
+      notifications.show({
+        title: 'Ошибка',
+        message: error.response?.data?.detail || 'Ошибка регистрации',
+        color: 'red',
+      });
     } finally {
       setLoading(false);
     }

@@ -2,6 +2,31 @@ import axios from 'axios';
 
 const API_BASE_URL = 'http://localhost:8000';
 
+const PUBLIC_ROUTES = ['/sign-in', '/sign-up'];
+
+const isPublicRoute = () => {
+  if (typeof window === 'undefined') return false;
+  
+  return PUBLIC_ROUTES.some(route => 
+    window.location.pathname.startsWith(route)
+  );
+};
+
+let isRefreshing = false;
+let failedQueue: { resolve: Function; reject: Function }[] = [];
+
+const processQueue = (error: any = null, token = null) => {
+  failedQueue.forEach(promise => {
+    if (error) {
+      promise.reject(error);
+    } else {
+      promise.resolve(token);
+    }
+  });
+  
+  failedQueue = [];
+};
+
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
   headers: {
@@ -15,24 +40,58 @@ apiClient.interceptors.response.use(
   async (error) => {
     const originalRequest = error.config;
 
-    if (error.response?.status === 401 && !originalRequest._retry) {
-      originalRequest._retry = true;
-
-      if (originalRequest.url?.includes('/auth/refresh')) {
-        window.location.href = '/sign-in';
-        return Promise.reject(error);
-      }
-
-      try {
-        await apiClient.post('/auth/refresh');
-        return apiClient(originalRequest);
-      } catch (refreshError) {
-        window.location.href = '/sign-in';
-        return Promise.reject(refreshError);
-      }
+    if (error.response?.status !== 401 || originalRequest._retry) {
+      return Promise.reject(error);
+    }
+    
+    if (isPublicRoute()) {
+      return Promise.reject(error);
     }
 
-    return Promise.reject(error);
+    if (originalRequest.url?.includes('/auth/refresh')) {
+      processQueue(error);
+      isRefreshing = false;
+      
+      if (!isPublicRoute() && typeof window !== 'undefined') {
+        window.location.href = '/sign-in';
+      }
+      
+      return Promise.reject(error);
+    }
+
+    originalRequest._retry = true;
+
+    if (isRefreshing) {
+      return new Promise((resolve, reject) => {
+        failedQueue.push({ resolve, reject });
+      })
+        .then(() => {
+          return apiClient(originalRequest);
+        })
+        .catch(err => {
+          return Promise.reject(err);
+        });
+    }
+
+    isRefreshing = true;
+
+    try {
+      await apiClient.post('/auth/refresh');
+      
+      processQueue(null);
+      
+      return apiClient(originalRequest);
+    } catch (refreshError) {
+      processQueue(refreshError);
+      
+      if (!isPublicRoute() && typeof window !== 'undefined') {
+        window.location.href = '/sign-in';
+      }
+      
+      return Promise.reject(refreshError);
+    } finally {
+      isRefreshing = false;
+    }
   }
 );
 
